@@ -156,6 +156,8 @@ class StripeALLInOne {
             // 推送用户邮箱
             'customer_email' => $userEmail,
             ];
+            // 定义 stripe_account 参数
+            $stripe_account = isset($this->config['stripe_account']) ? $this->config['stripe_account'] : null;
             // 创建 Checkout 会话
             if ($stripe_account) {
                 // 如果存在 stripe_account 参数
