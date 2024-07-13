@@ -32,12 +32,11 @@ class StripeALLInOne {
                 'description' => 'whsec_....',
                 'type' => 'input',
             ],
-            // 此处删除
-            // 'description' => [
-            //    'label' => '自定义商品介绍',
-            //    'description' => '',
-            //    'type' => 'input',
-            // ],
+            'stripe_account' => [
+                'label' => '子账户ID(如果有就填写)',
+                'description' => 'acct_开头',
+                'type' => 'input',
+            ],
             'payment_method' => [
                 'label' => '支付方式',
                 'description' => '请输入alipay, wechat_pay, cards',
@@ -92,8 +91,20 @@ class StripeALLInOne {
                 ],
             ];
         }
-        //更新支持最新的paymentIntents方法，Sources API将在今年被彻底替
-        $stripeIntents = $stripe->paymentIntents->create($params);
+        // 定义 stripe_account 参数
+            $stripe_account = isset($this->config['stripe_account']) ? $this->config['stripe_account'] : null;
+
+            // 创建支付意图
+            if ($stripe_account) {
+                // 如果存在 stripe_account 参数
+                $stripeIntents = $stripe->paymentIntents->create(
+                    $params,
+                    ['stripe_account' => $stripe_account]
+                );
+            } else {
+                // 如果不存在 stripe_account 参数
+                $stripeIntents = $stripe->paymentIntents->create($params);
+            }
 
         $nextAction = null;
         
@@ -120,7 +131,7 @@ class StripeALLInOne {
                 }
         }
     } else {
-        $creditCheckOut = $stripe->checkout->sessions->create([
+        $checkoutParams = [
             'success_url' => $order['return_url'],
             'client_reference_id' => $order['trade_no'],
             'payment_method_types' => ['card'],
@@ -143,11 +154,22 @@ class StripeALLInOne {
             // 信用卡不获取手机号
             'phone_number_collection' => ['enabled' => false],
             // 推送用户邮箱
-            'customer_email' => $userEmail, 
-        ]);
-        $jumpUrl = $creditCheckOut['url'];
-        $actionType = 1;
-    }
+            'customer_email' => $userEmail,
+            ];
+            // 创建 Checkout 会话
+            if ($stripe_account) {
+                // 如果存在 stripe_account 参数
+                $creditCheckOut = $stripe->checkout->sessions->create(
+                    $checkoutParams,
+                    ['stripe_account' => $stripe_account]
+                );
+            } else {
+                // 如果不存在 stripe_account 参数
+                $creditCheckOut = $stripe->checkout->sessions->create($checkoutParams);
+            }
+            $jumpUrl = $creditCheckOut['url'];
+            $actionType = 1;
+        }
 
         return [
             'type' => $actionType,
