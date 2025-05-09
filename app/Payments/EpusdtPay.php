@@ -22,6 +22,11 @@ class EpusdtPay {
                 'label' => 'API Token',
                 'description' => '您的 EpusdtPay API Token',
                 'type' => 'input',
+            ],
+            'currency_types' => [
+                'label' => '货币种类',
+                'description' => '请输入usdt.trc20(默认) tron.trx usdt.polygon',
+                'type' => 'input',
             ]
         ];
     }
@@ -33,6 +38,7 @@ class EpusdtPay {
 			"order_id" => $order['trade_no'], 
 			'redirect_url' => $order['return_url'],
 			'notify_url' => $order['notify_url'],
+            'trade_type' => $this->config['currency_types'],
         ];
         $params['signature'] = $this->sign($params);
 
