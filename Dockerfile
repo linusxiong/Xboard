@@ -6,6 +6,8 @@ RUN install-php-extensions pcntl bcmath inotify \
     && apk --no-cache add shadow python3 py3-pip nginx sqlite nginx-mod-http-brotli mysql-client git patch \
     && python3 -m venv /opt/supervisor \
     && /opt/supervisor/bin/pip install --no-cache-dir supervisor==4.3.0 \
+    && ln -sf /opt/supervisor/bin/supervisord /usr/bin/supervisord \
+    && ln -sf /opt/supervisor/bin/supervisorctl /usr/bin/supervisorctl \
     && addgroup -S -g 1000 www \
     && adduser -S -D -H -G www -u 1000 www
 
