@@ -1,27 +1,36 @@
-version: '3'
 services:
   xboard:
-    # build: 
+    # build:
     #   context: .
-    image: ghcr.io/cedar2025/xboard:legacy
+    image: ghcr.io/linusxiong/xboard:latest
+    restart: unless-stopped
     volumes:
-      - ./:/www/
-      # - ./.env:/www/.env
-      - redis-socket:/run/redis-socket # 挂载socket
+      # Create .env from .env.example before starting the stack.
+      - ./.env:/www/.env
+      - ./storage:/www/storage
+      - ./bootstrap/cache:/www/bootstrap/cache
+      - redis-socket:/run/redis-socket
     environment:
-      - docker=true #用于给安装脚本判断是否为docker环境
+      docker: "true"
     depends_on:
-      - redis
-    network_mode: host #默认使用Host模式，需要Bridge模式自己注释掉
-    restart: always
-    # ports:
-    #   - 7001:7001
+      redis:
+        condition: service_healthy
+    ports:
+      - "7001:7001"
+
   redis:
-    build: 
+    build:
       context: .docker/services/redis
-    restart: always
+    restart: unless-stopped
     volumes:
-      - ./.docker/.data/redis:/data/ # 挂载redis持久化数据
-      - redis-socket:/run/redis-socket # 挂载socket
+      - redis-data:/data
+      - redis-socket:/run/redis-socket
+    healthcheck:
+      test: ["CMD", "redis-cli", "-s", "/run/redis-socket/redis.sock", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
+  redis-data:
   redis-socket:

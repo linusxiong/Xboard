@@ -1,13 +1,36 @@
 name: Docker Build and Publish
 
-on:
-  push:
-    branches: ["legacy", "dev"]
+"on":
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Image channel tag to publish
+        required: true
+        type: choice
+        default: dev
+        options:
+          - dev
+          - legacy
+          - latest
+      extra_tag:
+        description: Optional extra image tag
+        required: false
+        type: string
+      platforms:
+        description: Target platforms
+        required: true
+        type: string
+        default: linux/amd64,linux/arm64
+
+run-name: Publish ${{ inputs.channel }} Docker image from ${{ github.ref_name }}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.channel }}
+  cancel-in-progress: false
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.repository_owner }}/xboard
 
 jobs:
   build:
@@ -19,76 +42,71 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v6
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
-        with:
-          platforms: 'arm64,amd64'
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-        with:
-          platforms: linux/amd64,linux/arm64
-          driver-opts: |
-            image=moby/buildkit:latest
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve release version
+        id: version
+        run: |
+          VERSION="$(date '+%Y%m%d')-$(git rev-parse --short HEAD)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved version: $VERSION"
+
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
+            type=raw,value=${{ inputs.channel }}
+            type=raw,value=${{ inputs.extra_tag }},enable=${{ inputs.extra_tag != '' }}
+            type=raw,value=${{ steps.version.outputs.version }}
             type=sha,format=long
-            type=raw,value=new
-
-      - name: Get version
-        id: get_version
-        run: echo "version=$(git describe --tags --always)" >> $GITHUB_OUTPUT
 
       - name: Update version in app.php
         run: |
-          VERSION=$(date '+%Y%m%d')-$(git rev-parse --short HEAD)
+          VERSION="${{ steps.version.outputs.version }}"
           sed -i "s/'version' => '.*'/'version' => '$VERSION'/g" config/app.php
           echo "Updated version to: $VERSION"
 
       - name: Build and push
         id: build-and-push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ inputs.platforms }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/xboard:legacy
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/xboard:dev
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/xboard
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/xboard:latest
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/xboard:${{ steps.get_version.outputs.version }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             BUILDKIT_INLINE_CACHE=1
           provenance: false
 
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3.4.0
+        uses: sigstore/cosign-installer@v4.1.2
         with:
-          cosign-release: 'v2.2.2'
+          cosign-release: v3.0.6
 
       - name: Sign image
         if: steps.build-and-push.outputs.digest != ''
         env:
-          COSIGN_EXPERIMENTAL: 1
+          DIGEST: ${{ steps.build-and-push.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          echo "${{ steps.meta.outputs.tags }}" | xargs -I {} cosign sign --yes "{}@${{ steps.build-and-push.outputs.digest }}"
+          while IFS= read -r tag; do
+            [ -n "$tag" ] && cosign sign --yes "${tag}@${DIGEST}"
+          done <<< "$TAGS"
