@@ -1,64 +1,82 @@
-# About Xboard
-Xboard is a panel based on V2board's secondary development, with significant enhancements in both performance and functionality.
+# Xboard
 
-# Disclaimer
-This project is personally developed and maintained by me for learning purposes. I do not guarantee any availability and am not responsible for any consequences resulting from the use of this software.
+[English](./README.md) | [简体中文](./README.zh-CN.md)
 
-# Xboard Features
-Based on V2board's secondary development, with the following added features:
-- Upgraded to Laravel 10
-- Adapted to Laravels (10+ times concurrent improvement)
-- Adapted to Webman (about 50% faster than laravels)
-- Modified configuration retrieval from database
-- Support for Docker deployment and distributed deployment
-- Support for subscription distribution based on user IP location
-- Added Hy2 support
-- Added sing-box distribution
-- Support for obtaining real visitor IP directly from Cloudflare
-- Support for automatic new protocol distribution based on client version
-- Support for route filtering (add &filter=HongKong|USA after subscription URL)
-- Support for Sqlite installation (alternative to MySQL, great for personal use)
-- User frontend rebuilt using Vue3 + TypeScript + NaiveUI + Unocss + Pinia
-- Fixed numerous bugs
+Xboard is a high-performance proxy service management panel based on secondary development of V2board. It keeps the familiar V2board workflow while improving runtime performance, deployment options, client subscription delivery, and frontend maintainability.
 
-# **System Architecture**
+## Disclaimer
 
-- PHP8.1+
+This project is developed and maintained for learning and research purposes. No availability, security, or operational guarantee is provided. You are responsible for evaluating, deploying, and operating it in compliance with your local laws and infrastructure requirements.
+
+## Features
+
+- Upgraded to Laravel 10.
+- Runs with Adapterman/Webman on Workerman for improved concurrency.
+- Docker and Docker Compose deployment support.
+- Distributed deployment support.
+- Database-backed configuration retrieval.
+- Subscription distribution based on user IP location.
+- HY2 support.
+- sing-box subscription distribution.
+- Real visitor IP support behind Cloudflare.
+- Automatic protocol distribution based on client version.
+- Subscription route filtering, for example `&filter=HongKong|USA`.
+- SQLite installation support for lightweight personal deployments.
+- User frontend rebuilt with Vue 3, TypeScript, Naive UI, UnoCSS, and Pinia.
+- Multiple bug fixes and compatibility improvements.
+
+## Runtime
+
+- PHP 8.1+ for the application; the official Docker image uses PHP 8.3.
 - Composer
-- MySQL5.7+
+- MySQL 5.7+ or SQLite
 - Redis
-- Laravel
+- Laravel 10
+- Adapterman 0.7+
+- Workerman 5.2+
+- Nginx
+- Supervisor 4.3+ in the Docker image
 
-## Performance Comparison [View Details](./docs/性能对比.md)
-> xboard shows tremendous performance improvements in both frontend and backend
+## Performance
 
-|Scenario   | php-fpm(traditional) | php-fpm(traditional with opcache) | laravels | webman(docker)|
-|----       |   ----              |----                               |----      | ---|
-|Homepage   | 6 req/s             | 157 req/s                         | 477 req/s| 803 req/s|
-|User Subscription| 6 req/s       | 196 req/s                         | 586 req/s| 1064 req/s|
-|User Homepage Latency| 308ms     | 110ms                            | 101ms    | 98ms|
+[View the detailed benchmark](./docs/性能对比.md)
 
-## Page Display
-![Example Image](./docs/images/dashboard.png)
+Xboard improves performance significantly compared with a traditional PHP-FPM deployment.
 
-## Installation / Update / Rollback
-You can click to view the **installation and update** steps for the following methods:
-- [1panel Deployment](./docs/1panel安装指南.md)
-- [Docker Compose Command-line Quick Deployment](./docs/docker-compose安装指南.md)
-- [aapanel + Docker Compose (Recommended)](./docs/aapanel+docker安装指南.md)
-- [aapanel Deployment](./docs/aapanel安装指南.md)
+| Scenario | php-fpm | php-fpm with opcache | laravels | webman docker |
+| --- | ---: | ---: | ---: | ---: |
+| Homepage | 6 req/s | 157 req/s | 477 req/s | 803 req/s |
+| User subscription | 6 req/s | 196 req/s | 586 req/s | 1064 req/s |
+| User homepage latency | 308 ms | 110 ms | 101 ms | 98 ms |
 
-### Migrating from Other Versions
-#### Database Migration
-**Check the corresponding migration guide according to your version**
-- v2board dev version 23/10/27 [Jump to Migration Guide](./docs/v2b_dev迁移指南.md)
-- v2board 1.7.4 [Jump to Migration Guide](./docs/v2b_1.7.4迁移指南.md)
-- v2board 1.7.3 [Jump to Migration Guide](./docs/v2b_1.7.3迁移指南.md)
-- v2board wyx2685 [Jump to Migration Guide](./docs/v2b_wyx2685迁移指南.md)
+## Screenshot
 
-### Note
-> Modifying the admin path requires a restart to take effect
-```
+![Dashboard screenshot](./docs/images/dashboard.png)
+
+## Installation, Update, And Rollback
+
+Choose the guide that matches your deployment method:
+
+- [1Panel deployment](./docs/1panel安装指南.md)
+- [Docker Compose command-line quick deployment](./docs/docker-compose安装指南.md)
+- [aaPanel + Docker Compose deployment, recommended](./docs/aapanel+docker安装指南.md)
+- [aaPanel deployment](./docs/aapanel安装指南.md)
+
+## Migration From Other Versions
+
+Check the corresponding migration guide for your current version:
+
+- [v2board dev version 2023-10-27 migration guide](./docs/v2b_dev迁移指南.md)
+- [v2board 1.7.4 migration guide](./docs/v2b_1.7.4迁移指南.md)
+- [v2board 1.7.3 migration guide](./docs/v2b_1.7.3迁移指南.md)
+- [v2board wyx2685 migration guide](./docs/v2b_wyx2685迁移指南.md)
+
+## Notes
+
+After changing the admin path, restart the service for the change to take effect:
+
+```bash
 docker compose restart
 ```
-> If using aapanel installation, you need to restart the webman daemon process
+
+If you deploy with aaPanel, restart the Webman daemon process from aaPanel as well.

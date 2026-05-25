@@ -1,9 +1,11 @@
-FROM phpswoole/swoole:php8.1-alpine
+FROM phpswoole/swoole:php8.3-alpine
 
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
 
 RUN install-php-extensions pcntl bcmath inotify \
-    && apk --no-cache add shadow supervisor nginx sqlite nginx-mod-http-brotli mysql-client git patch \
+    && apk --no-cache add shadow python3 py3-pip nginx sqlite nginx-mod-http-brotli mysql-client git patch \
+    && python3 -m venv /opt/supervisor \
+    && /opt/supervisor/bin/pip install --no-cache-dir supervisor==4.3.0 \
     && addgroup -S -g 1000 www \
     && adduser -S -D -H -G www -u 1000 www
 
@@ -25,4 +27,4 @@ RUN composer dump-autoload --optimize --no-dev --no-interaction \
     && chmod -R ug+rwX /www/storage /www/bootstrap/cache \
     && chmod +x /www/artisan
 
-CMD ["/usr/bin/supervisord", "--nodaemon", "-c", "/etc/supervisor/supervisord.conf"]
+CMD ["/opt/supervisor/bin/supervisord", "--nodaemon", "-c", "/etc/supervisor/supervisord.conf"]

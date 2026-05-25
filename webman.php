@@ -53,7 +53,11 @@ if (extension_loaded('inotify')) {
                 }
             }
         }
-        Worker::$globalEvent->add($worker->inotifyFd, EventInterface::EV_READ, 'check_files_change');
+        if (method_exists(Worker::$globalEvent, 'onReadable')) {
+            Worker::$globalEvent->onReadable($worker->inotifyFd, 'check_files_change');
+        } else {
+            Worker::$globalEvent->add($worker->inotifyFd, EventInterface::EV_READ, 'check_files_change');
+        }
     };
 }
 

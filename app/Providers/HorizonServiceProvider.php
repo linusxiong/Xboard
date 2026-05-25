@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\AuthService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Laravel\Horizon\Horizon;
@@ -17,6 +18,20 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
     public function boot()
     {
         parent::boot();
+
+        Horizon::auth(function (Request $request) {
+            $authorization = $request->input('auth_data') ?? $request->header('authorization');
+            if (!$authorization) {
+                return false;
+            }
+
+            if (stripos($authorization, 'Bearer ') === 0) {
+                $authorization = trim(substr($authorization, 7));
+            }
+
+            $user = AuthService::decryptAuthData($authorization);
+            return (bool)($user && !empty($user['is_admin']));
+        });
 
         // Horizon::routeSmsNotificationsTo('15556667777');
         // Horizon::routeMailNotificationsTo('example@example.com');
