@@ -77,7 +77,7 @@ class EpusdtPay {
     }
     
     public function verify($params) {
-        return $params['signature'] === $this->sign($params);
+        return hash_equals($this->sign($params), (string)($params['signature'] ?? ''));
     }
 
     protected function sign(array $params)

@@ -20,21 +20,26 @@ class PaymentController extends Controller
             $verify = $paymentService->notify($request->input());
             if (!$verify)
                 return $this->fail([422, 'verify error']);
-            if (!$this->handle($verify['trade_no'], $verify['callback_no'])) {
+            if (!$this->handle($verify['trade_no'], $verify['callback_no'], $paymentService->getPaymentId())) {
                 return $this->fail([400, 'handle error']);
             }
             return (isset($verify['custom_result']) ? $verify['custom_result'] : 'success');
+        } catch (ApiException $e) {
+            return $this->fail([$e->getCode(), $e->getMessage()], null, $e->errors());
         } catch (\Exception $e) {
             \Log::error($e);
             return $this->fail([500, 'fail']);
         }
     }
 
-    private function handle($tradeNo, $callbackNo)
+    private function handle($tradeNo, $callbackNo, $paymentId = null)
     {
         $order = Order::where('trade_no', $tradeNo)->first();
         if (!$order) {
             return $this->fail([400202, 'order is not found']);
+        }
+        if ($paymentId && (int)$order->payment_id !== (int)$paymentId) {
+            return true;
         }
         if ($order->status !== Order::STATUS_PENDING)
             return true;

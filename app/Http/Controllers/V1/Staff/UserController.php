@@ -13,6 +13,37 @@ use Illuminate\Http\Request;
 
 class UserController extends Controller
 {
+    private const USER_FILTER_KEYS = [
+        'id',
+        'email',
+        'transfer_enable',
+        'd',
+        'expired_at',
+        'uuid',
+        'token',
+        'invite_by_email',
+        'invite_user_id',
+        'plan_id',
+        'banned',
+        'remarks',
+    ];
+
+    private const USER_SORT_COLUMNS = [
+        'id',
+        'email',
+        'transfer_enable',
+        'u',
+        'd',
+        'expired_at',
+        'balance',
+        'commission_balance',
+        'invite_user_id',
+        'plan_id',
+        'banned',
+        'created_at',
+        'updated_at',
+    ];
+
     public function getUserInfoById(Request $request)
     {
         if (empty($request->input('id'))) {
@@ -62,7 +93,7 @@ class UserController extends Controller
     public function sendMail(UserSendMail $request)
     {
         $sortType = in_array($request->input('sort_type'), ['ASC', 'DESC']) ? $request->input('sort_type') : 'DESC';
-        $sort = $request->input('sort') ? $request->input('sort') : 'created_at';
+        $sort = $this->getSortColumn($request->input('sort'), 'created_at');
         $builder = User::orderBy($sort, $sortType);
         $this->filter($request, $builder);
         $users = $builder->get();
@@ -85,7 +116,7 @@ class UserController extends Controller
     public function ban(Request $request)
     {
         $sortType = in_array($request->input('sort_type'), ['ASC', 'DESC']) ? $request->input('sort_type') : 'DESC';
-        $sort = $request->input('sort') ? $request->input('sort') : 'created_at';
+        $sort = $this->getSortColumn($request->input('sort'), 'created_at');
         $builder = User::orderBy($sort, $sortType);
         $this->filter($request, $builder);
         try {
@@ -98,5 +129,41 @@ class UserController extends Controller
         }
 
         return $this->success(true);
+    }
+
+    private function filter(Request $request, $builder): void
+    {
+        $request->validate([
+            'filter.*.key' => 'required|in:' . implode(',', self::USER_FILTER_KEYS),
+            'filter.*.condition' => 'required|in:>,<,=,>=,<=,模糊,!=',
+            'filter.*.value' => 'required'
+        ]);
+
+        $filters = $request->input('filter');
+        if (!$filters) {
+            return;
+        }
+
+        foreach ($filters as $filter) {
+            if ($filter['condition'] === '模糊') {
+                $filter['condition'] = 'like';
+                $filter['value'] = "%{$filter['value']}%";
+            }
+            if ($filter['key'] === 'd' || $filter['key'] === 'transfer_enable') {
+                $filter['value'] = $filter['value'] * 1073741824;
+            }
+            if ($filter['key'] === 'invite_by_email') {
+                $user = User::where('email', $filter['condition'], $filter['value'])->first();
+                $inviteUserId = isset($user->id) ? $user->id : 0;
+                $builder->where('invite_user_id', $inviteUserId);
+                continue;
+            }
+            $builder->where($filter['key'], $filter['condition'], $filter['value']);
+        }
+    }
+
+    private function getSortColumn($sort, string $default): string
+    {
+        return in_array($sort, self::USER_SORT_COLUMNS, true) ? $sort : $default;
     }
 }

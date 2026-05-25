@@ -199,6 +199,10 @@ class UserController extends Controller
 
     public function getQuickLoginUrl(Request $request)
     {
+        $request->validate([
+            'redirect' => 'nullable|string|max:255',
+        ]);
+
         $user = User::find($request->user['id']);
         if (!$user) {
             return $this->fail([400, __('The user does not exist')]);
@@ -207,12 +211,18 @@ class UserController extends Controller
         $code = Helper::guid();
         $key = CacheKey::get('TEMP_TOKEN', $code);
         Cache::put($key, $user->id, 60);
-        $redirect = '/#/login?verify=' . $code . '&redirect=' . ($request->input('redirect') ? $request->input('redirect') : 'dashboard');
+        $redirect = $this->buildLoginRedirect($code, $request->input('redirect'));
         if (admin_setting('app_url')) {
             $url = admin_setting('app_url') . $redirect;
         } else {
             $url = url($redirect);
         }
         return $this->success($url);
+    }
+
+    private function buildLoginRedirect(string $verify, ?string $redirect): string
+    {
+        $redirect = $redirect ? preg_replace('/[\r\n]/', '', $redirect) : 'dashboard';
+        return '/#/login?verify=' . rawurlencode($verify) . '&redirect=' . rawurlencode($redirect);
     }
 }

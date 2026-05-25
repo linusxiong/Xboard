@@ -27,15 +27,16 @@ class AuthController extends Controller
             return $this->fail([404,null]);
         }
         $params = $request->validate([
-            'email' => 'required|email:strict',
-            'redirect' => 'nullable'
+            'email' => 'required|string|email:strict|max:64',
+            'redirect' => 'nullable|string|max:255'
         ]);
+        $email = strtolower(trim($params['email']));
 
-        if (Cache::get(CacheKey::get('LAST_SEND_LOGIN_WITH_MAIL_LINK_TIMESTAMP', $params['email']))) {
+        if (Cache::get(CacheKey::get('LAST_SEND_LOGIN_WITH_MAIL_LINK_TIMESTAMP', $email))) {
             return $this->fail([429 ,__('Sending frequently, please try again later')]);
         }
 
-        $user = User::where('email', $params['email'])->first();
+        $user = User::where('email', $email)->first();
         if (!$user) {
             return $this->success(true);
         }
@@ -43,10 +44,10 @@ class AuthController extends Controller
         $code = Helper::guid();
         $key = CacheKey::get('TEMP_TOKEN', $code);
         Cache::put($key, $user->id, 300);
-        Cache::put(CacheKey::get('LAST_SEND_LOGIN_WITH_MAIL_LINK_TIMESTAMP', $params['email']), time(), 60);
+        Cache::put(CacheKey::get('LAST_SEND_LOGIN_WITH_MAIL_LINK_TIMESTAMP', $email), time(), 60);
 
 
-        $redirect = '/#/login?verify=' . $code . '&redirect=' . ($request->input('redirect') ? $request->input('redirect') : 'dashboard');
+        $redirect = $this->buildLoginRedirect($code, $request->input('redirect'));
         if (admin_setting('app_url')) {
             $link = admin_setting('app_url') . $redirect;
         } else {
@@ -66,12 +67,14 @@ class AuthController extends Controller
             ]
         ]);
 
-        return $this->success($link);
+        return $this->success(true);
 
     }
 
     public function register(AuthRegister $request)
     {
+        $email = strtolower(trim((string)$request->input('email')));
+
         if ((int)admin_setting('register_limit_by_ip_enable', 0)) {
             $registerCountByIP = Cache::get(CacheKey::get('REGISTER_IP_RATE_LIMIT', $request->ip())) ?? 0;
             if ((int)$registerCountByIP >= (int)admin_setting('register_limit_count', 3)) {
@@ -89,14 +92,14 @@ class AuthController extends Controller
         }
         if ((int)admin_setting('email_whitelist_enable', 0)) {
             if (!Helper::emailSuffixVerify(
-                $request->input('email'),
+                $email,
                 admin_setting('email_whitelist_suffix', Dict::EMAIL_WHITELIST_SUFFIX_DEFAULT))
             ) {
                 return $this->fail([400,__('Email suffix is not in the Whitelist')]);
             }
         }
         if ((int)admin_setting('email_gmail_limit_enable', 0)) {
-            $prefix = explode('@', $request->input('email'))[0];
+            $prefix = explode('@', $email)[0];
             if (strpos($prefix, '.') !== false || strpos($prefix, '+') !== false) {
                 return $this->fail([400,__('Gmail alias is not supported')]);
             }
@@ -110,14 +113,15 @@ class AuthController extends Controller
             }
         }
         if ((int)admin_setting('email_verify', 0)) {
-            if (empty($request->input('email_code'))) {
+            $inputCode = (string)$request->input('email_code');
+            if ($inputCode === '') {
                 return $this->fail([422,__('Email verification code cannot be empty')]);
             }
-            if ((string)Cache::get(CacheKey::get('EMAIL_VERIFY_CODE', $request->input('email'))) !== (string)$request->input('email_code')) {
+            $cachedCode = Cache::get(CacheKey::get('EMAIL_VERIFY_CODE', $email));
+            if (!preg_match('/^\d{6}$/', $inputCode) || $cachedCode === null || $cachedCode === '' || !hash_equals((string)$cachedCode, $inputCode)) {
                 return $this->fail([400,__('Incorrect email verification code')]);
             }
         }
-        $email = $request->input('email');
         $password = $request->input('password');
         $exist = User::where('email', $email)->first();
         if ($exist) {
@@ -164,7 +168,7 @@ class AuthController extends Controller
             return $this->fail([500,__('Register failed')]);
         }
         if ((int)admin_setting('email_verify', 0)) {
-            Cache::forget(CacheKey::get('EMAIL_VERIFY_CODE', $request->input('email')));
+            Cache::forget(CacheKey::get('EMAIL_VERIFY_CODE', $email));
         }
 
         $user->last_login_at = time();
@@ -186,7 +190,7 @@ class AuthController extends Controller
 
     public function login(AuthLogin $request)
     {
-        $email = $request->input('email');
+        $email = strtolower(trim((string)$request->input('email')));
         $password = $request->input('password');
 
         if ((int)admin_setting('password_limit_enable', 1)) {
@@ -228,8 +232,14 @@ class AuthController extends Controller
 
     public function token2Login(Request $request)
     {
+        $request->validate([
+            'token' => 'nullable|string|max:64',
+            'verify' => 'nullable|string|max:64',
+            'redirect' => 'nullable|string|max:255',
+        ]);
+
         if ($request->input('token')) {
-            $redirect = '/#/login?verify=' . $request->input('token') . '&redirect=' . ($request->input('redirect') ? $request->input('redirect') : 'dashboard');
+            $redirect = $this->buildLoginRedirect($request->input('token'), $request->input('redirect'));
             if (admin_setting('app_url')) {
                 $location = admin_setting('app_url') . $redirect;
             } else {
@@ -259,6 +269,10 @@ class AuthController extends Controller
 
     public function getQuickLoginUrl(Request $request)
     {
+        $request->validate([
+            'redirect' => 'nullable|string|max:255',
+        ]);
+
         $authorization = $request->input('auth_data') ?? $request->header('authorization');
         if (!$authorization) return $this->fail(ResponseEnum::CLIENT_HTTP_UNAUTHORIZED);
 
@@ -268,7 +282,7 @@ class AuthController extends Controller
         $code = Helper::guid();
         $key = CacheKey::get('TEMP_TOKEN', $code);
         Cache::put($key, $user['id'], 60);
-        $redirect = '/#/login?verify=' . $code . '&redirect=' . ($request->input('redirect') ? $request->input('redirect') : 'dashboard');
+        $redirect = $this->buildLoginRedirect($code, $request->input('redirect'));
         if (admin_setting('app_url')) {
             $url = admin_setting('app_url') . $redirect;
         } else {
@@ -279,24 +293,42 @@ class AuthController extends Controller
 
     public function forget(AuthForget $request)
     {
-        $forgetRequestLimitKey = CacheKey::get('FORGET_REQUEST_LIMIT', $request->input('email'));
-        $forgetRequestLimit = (int)Cache::get($forgetRequestLimitKey);
-        if ($forgetRequestLimit >= 3) return $this->fail([429, __('Reset failed, Please try again later')]);
-        if ((string)Cache::get(CacheKey::get('EMAIL_VERIFY_CODE', $request->input('email'))) !== (string)$request->input('email_code')) {
-            Cache::put($forgetRequestLimitKey, $forgetRequestLimit ? $forgetRequestLimit + 1 : 1, 300);
+        $email = strtolower(trim((string)$request->input('email')));
+        $inputCode = (string)$request->input('email_code');
+        $password = (string)$request->input('password');
+
+        if (!preg_match('/^\d{6}$/', $inputCode)) {
             return $this->fail([400,__('Incorrect email verification code')]);
         }
-        $user = User::where('email', $request->input('email'))->first();
+
+        $forgetRequestLimitKey = CacheKey::get('FORGET_REQUEST_LIMIT', $email);
+        $forgetRequestLimit = (int)Cache::get($forgetRequestLimitKey);
+        if ($forgetRequestLimit >= 3) return $this->fail([429, __('Reset failed, Please try again later')]);
+
+        $cachedCode = Cache::get(CacheKey::get('EMAIL_VERIFY_CODE', $email));
+        if ($cachedCode === null || $cachedCode === '' || !hash_equals((string)$cachedCode, $inputCode)) {
+            Cache::put($forgetRequestLimitKey, $forgetRequestLimit + 1, 300);
+            return $this->fail([400,__('Incorrect email verification code')]);
+        }
+
+        $user = User::where('email', $email)->first();
         if (!$user) {
             return $this->fail([400,__('This email is not registered in the system')]);
         }
-        $user->password = password_hash($request->input('password'), PASSWORD_DEFAULT);
-        $user->password_algo = NULL;
-        $user->password_salt = NULL;
+        $user->password = password_hash($password, PASSWORD_DEFAULT);
+        $user->password_algo = null;
+        $user->password_salt = null;
         if (!$user->save()) {
             return $this->fail([500,__('Reset failed')]);
         }
-        Cache::forget(CacheKey::get('EMAIL_VERIFY_CODE', $request->input('email')));
+        Cache::forget(CacheKey::get('EMAIL_VERIFY_CODE', $email));
+        (new AuthService($user))->removeAllSession();
         return $this->success(true);
+    }
+
+    private function buildLoginRedirect(string $verify, ?string $redirect): string
+    {
+        $redirect = $redirect ? preg_replace('/[\r\n]/', '', $redirect) : 'dashboard';
+        return '/#/login?verify=' . rawurlencode($verify) . '&redirect=' . rawurlencode($redirect);
     }
 }

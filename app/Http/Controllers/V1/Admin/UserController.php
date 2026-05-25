@@ -18,6 +18,40 @@ use Illuminate\Support\Facades\DB;
 
 class UserController extends Controller
 {
+    private const USER_FILTER_KEYS = [
+        'id',
+        'email',
+        'transfer_enable',
+        'd',
+        'expired_at',
+        'uuid',
+        'token',
+        'invite_by_email',
+        'invite_user_id',
+        'plan_id',
+        'banned',
+        'remarks',
+        'is_admin',
+    ];
+
+    private const USER_SORT_COLUMNS = [
+        'id',
+        'email',
+        'transfer_enable',
+        'u',
+        'd',
+        'total_used',
+        'expired_at',
+        'balance',
+        'commission_balance',
+        'invite_user_id',
+        'plan_id',
+        'banned',
+        'is_admin',
+        'created_at',
+        'updated_at',
+    ];
+
     public function resetSecret(Request $request)
     {
         $user = User::find($request->input('id'));
@@ -29,6 +63,12 @@ class UserController extends Controller
 
     private function filter(Request $request, $builder)
     {
+        $request->validate([
+            'filter.*.key' => 'required|in:' . implode(',', self::USER_FILTER_KEYS),
+            'filter.*.condition' => 'required|in:>,<,=,>=,<=,模糊,!=',
+            'filter.*.value' => 'required'
+        ]);
+
         $filters = $request->input('filter');
         if ($filters) {
             foreach ($filters as $k => $filter) {
@@ -56,7 +96,7 @@ class UserController extends Controller
         $current = $request->input('current') ? $request->input('current') : 1;
         $pageSize = $request->input('pageSize') >= 10 ? $request->input('pageSize') : 10;
         $sortType = in_array($request->input('sort_type'), ['ASC', 'DESC']) ? $request->input('sort_type') : 'DESC';
-        $sort = $request->input('sort') ? $request->input('sort') : 'created_at';
+        $sort = $this->getSortColumn($request->input('sort'), 'created_at');
         $userModel = User::select(
             DB::raw('*'),
             DB::raw('(u+d) as total_used')
@@ -249,7 +289,7 @@ class UserController extends Controller
     public function sendMail(UserSendMail $request)
     {
         $sortType = in_array($request->input('sort_type'), ['ASC', 'DESC']) ? $request->input('sort_type') : 'DESC';
-        $sort = $request->input('sort') ? $request->input('sort') : 'created_at';
+        $sort = $this->getSortColumn($request->input('sort'), 'created_at');
         $builder = User::orderBy($sort, $sortType);
         $this->filter($request, $builder);
         $users = $builder->get();
@@ -273,7 +313,7 @@ class UserController extends Controller
     public function ban(Request $request)
     {
         $sortType = in_array($request->input('sort_type'), ['ASC', 'DESC']) ? $request->input('sort_type') : 'DESC';
-        $sort = $request->input('sort') ? $request->input('sort') : 'created_at';
+        $sort = $this->getSortColumn($request->input('sort'), 'created_at');
         $builder = User::orderBy($sort, $sortType);
         $this->filter($request, $builder);
         try {
@@ -286,5 +326,10 @@ class UserController extends Controller
         }
 
         return $this->success(true);
+    }
+
+    private function getSortColumn($sort, string $default): string
+    {
+        return in_array($sort, self::USER_SORT_COLUMNS, true) ? $sort : $default;
     }
 }

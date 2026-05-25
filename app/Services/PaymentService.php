@@ -12,14 +12,20 @@ class PaymentService
     protected $class;
     protected $config;
     protected $payment;
+    protected $paymentModel;
 
     public function __construct($method, $id = NULL, $uuid = NULL)
     {
         $this->method = $method;
         $this->class = '\\App\\Payments\\' . $this->method;
         if (!class_exists($this->class)) throw new ApiException('gate is not found');
-        if ($id) $payment = Payment::find($id)->toArray();
-        if ($uuid) $payment = Payment::where('uuid', $uuid)->first()->toArray();
+        if ($id) $this->paymentModel = Payment::find($id);
+        if ($uuid) $this->paymentModel = Payment::where('uuid', $uuid)->first();
+        if (($id || $uuid) && !$this->paymentModel) throw new ApiException('gate is not found');
+        if ($this->paymentModel && $this->paymentModel->payment !== $this->method) {
+            throw new ApiException('gate is not match');
+        }
+        if ($this->paymentModel) $payment = $this->paymentModel->makeVisible('config')->toArray();
         $this->config = [];
         if (isset($payment)) {
             $this->config = $payment['config'];
@@ -29,6 +35,11 @@ class PaymentService
             $this->config['notify_domain'] = $payment['notify_domain'];
         };
         $this->payment = new $this->class($this->config);
+    }
+
+    public function getPaymentId()
+    {
+        return $this->paymentModel ? $this->paymentModel->id : null;
     }
 
     public function notify($params)

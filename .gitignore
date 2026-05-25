@@ -7,8 +7,10 @@
 *.user.ini
 /storage/*.key
 /vendor
+/database/testing.sqlite
 .env
 .env.backup
+.phpunit.cache
 .phpunit.result.cache
 .idea
 .lock

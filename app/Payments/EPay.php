@@ -68,7 +68,7 @@ class EPay
         ksort($params);
         reset($params);
         $str = stripslashes(urldecode(http_build_query($params))) . $this->config['key'];
-        if ($sign !== md5($str)) {
+        if (!hash_equals(md5($str), (string)$sign)) {
             return false;
         }
         return [

@@ -29,7 +29,7 @@ class CommController extends Controller
                 return $this->fail([400, __('Invalid code is incorrect')]);
             }
         }
-        $email = $request->input('email');
+        $email = strtolower(trim((string)$request->input('email')));
         if (Cache::get(CacheKey::get('LAST_SEND_EMAIL_VERIFY_TIMESTAMP', $email))) {
             return $this->fail([400, __('Email verification code has been sent, please request again later')]);
         }

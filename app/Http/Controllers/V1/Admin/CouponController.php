@@ -13,12 +13,27 @@ use Illuminate\Support\Facades\DB;
 
 class CouponController extends Controller
 {
+    private const COUPON_SORT_COLUMNS = [
+        'id',
+        'code',
+        'name',
+        'type',
+        'value',
+        'show',
+        'limit_use',
+        'limit_use_with_user',
+        'started_at',
+        'ended_at',
+        'created_at',
+        'updated_at',
+    ];
+
     public function fetch(Request $request)
     {
         $current = $request->input('current') ? $request->input('current') : 1;
         $pageSize = $request->input('pageSize') >= 10 ? $request->input('pageSize') : 10;
         $sortType = in_array($request->input('sort_type'), ['ASC', 'DESC']) ? $request->input('sort_type') : 'DESC';
-        $sort = $request->input('sort') ? $request->input('sort') : 'id';
+        $sort = $this->getSortColumn($request->input('sort'), 'id');
         $builder = Coupon::orderBy($sort, $sortType);
         $total = $builder->count();
         $coupons = $builder->forPage($current, $pageSize)
@@ -137,5 +152,10 @@ class CouponController extends Controller
         }
 
         return $this->success(true);
+    }
+
+    private function getSortColumn($sort, string $default): string
+    {
+        return in_array($sort, self::COUPON_SORT_COLUMNS, true) ? $sort : $default;
     }
 }

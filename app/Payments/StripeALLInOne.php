@@ -146,10 +146,10 @@ class StripeALLInOne {
         try {
             \Stripe\Stripe::setApiKey($this->config['stripe_sk_live']);
             //Workerman不支持使用php://input, stripe同时要求验证签名的payload不能经过修改，所以使用这个方法
-            $payload = $GLOBALS['HTTP_RAW_POST_DATA'];
-            $headers = getallheaders();
+            $payload = $GLOBALS['HTTP_RAW_POST_DATA'] ?? request()->getContent();
+            $headers = function_exists('getallheaders') ? getallheaders() : [];
             $headerName = 'Stripe-Signature';
-            $signatureHeader = $headers[$headerName] ?? '';
+            $signatureHeader = $headers[$headerName] ?? request()->header($headerName, '');
             $event = \Stripe\Webhook::constructEvent(
                 $payload,
                 $signatureHeader,

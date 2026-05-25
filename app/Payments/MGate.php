@@ -92,7 +92,7 @@ class MGate {
         ksort($params);
         reset($params);
         $str = http_build_query($params) . $this->config['mgate_app_secret'];
-        if ($sign !== md5($str)) {
+        if (!hash_equals(md5($str), (string)$sign)) {
             return false;
         }
         return [
