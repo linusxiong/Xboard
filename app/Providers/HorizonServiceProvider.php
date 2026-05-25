@@ -2,11 +2,13 @@
 
 namespace App\Providers;
 
-use App\Services\AuthService;
+use App\Support\HorizonAuthorization;
+use App\Support\HorizonSentinelDriver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Laravel\Horizon\Horizon;
 use Laravel\Horizon\HorizonApplicationServiceProvider;
+use Laravel\Sentinel\Sentinel;
 
 class HorizonServiceProvider extends HorizonApplicationServiceProvider
 {
@@ -19,19 +21,8 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
     {
         parent::boot();
 
-        Horizon::auth(function (Request $request) {
-            $authorization = $request->input('auth_data') ?? $request->header('authorization');
-            if (!$authorization) {
-                return false;
-            }
-
-            if (stripos($authorization, 'Bearer ') === 0) {
-                $authorization = trim(substr($authorization, 7));
-            }
-
-            $user = AuthService::decryptAuthData($authorization);
-            return (bool)($user && !empty($user['is_admin']));
-        });
+        Sentinel::extend('horizon', fn ($app) => new HorizonSentinelDriver(fn () => $app));
+        Horizon::auth(fn (Request $request) => HorizonAuthorization::check($request));
 
         // Horizon::routeSmsNotificationsTo('15556667777');
         // Horizon::routeMailNotificationsTo('example@example.com');

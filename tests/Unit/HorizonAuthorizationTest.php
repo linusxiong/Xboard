@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Horizon\Horizon;
+use Laravel\Sentinel\Sentinel;
 use Tests\TestCase;
 
 class HorizonAuthorizationTest extends TestCase
@@ -51,6 +52,22 @@ class HorizonAuthorizationTest extends TestCase
         $request->headers->set('authorization', $this->authDataFor(true));
 
         $this->assertTrue(Horizon::check($request));
+    }
+
+    public function testHorizonSentinelDriverAcceptsXboardAdminAuthorizationHeader(): void
+    {
+        $request = Request::create('/monitor/api/stats', 'GET');
+        $request->headers->set('authorization', $this->authDataFor(true));
+
+        $this->assertTrue(Sentinel::driver('horizon')->authorize($request));
+    }
+
+    public function testHorizonSentinelDriverAcceptsBearerAuthorizationHeader(): void
+    {
+        $request = Request::create('/monitor/api/stats', 'GET');
+        $request->headers->set('authorization', 'Bearer '.$this->authDataFor(true));
+
+        $this->assertTrue(Sentinel::driver('horizon')->authorize($request));
     }
 
     public function testHorizonRejectsXboardNonAdminAuthorizationHeader(): void
