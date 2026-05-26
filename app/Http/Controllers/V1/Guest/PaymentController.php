@@ -20,6 +20,15 @@ class PaymentController extends Controller
             $verify = $paymentService->notify($request->input());
             if (!$verify)
                 return $this->fail([422, 'verify error']);
+            if (is_string($verify)) {
+                return $verify;
+            }
+            if (!is_array($verify)) {
+                return $this->fail([422, 'verify error']);
+            }
+            if (isset($verify['custom_result']) && (!isset($verify['trade_no']) || !isset($verify['callback_no']))) {
+                return $verify['custom_result'];
+            }
             if (!$this->handle($verify['trade_no'], $verify['callback_no'], $paymentService->getPaymentId())) {
                 return $this->fail([400, 'handle error']);
             }

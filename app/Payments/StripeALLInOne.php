@@ -1,12 +1,36 @@
 <?php
 
-/**
- * 自己写别抄，抄NMB抄
- */
 namespace App\Payments;
-use App\Exceptions\ApiException;
 
-class StripeALLInOne {
+use App\Exceptions\ApiException;
+use App\Models\Order;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
+
+class StripeALLInOne
+{
+    private const STRIPE_API_VERSION = '2026-04-22.dahlia';
+    private const SUPPORTED_PAYMENT_METHODS = ['alipay', 'wechat_pay', 'cards', 'card'];
+    private const ZERO_DECIMAL_CURRENCIES = [
+        'bif',
+        'clp',
+        'djf',
+        'gnf',
+        'jpy',
+        'kmf',
+        'krw',
+        'mga',
+        'pyg',
+        'rwf',
+        'vnd',
+        'vuv',
+        'xaf',
+        'xof',
+        'xpf',
+    ];
+
+    protected array $config;
+
     public function __construct($config)
     {
         $this->config = $config;
@@ -45,99 +69,99 @@ class StripeALLInOne {
 
     public function pay($order)
     {
-        $currency = $this->config['currency'];
-        $exchange = $this->exchange('CNY', strtoupper($currency));
-        if (!$exchange) {
-            throw new ApiException('Currency conversion has timed out, please try again later', 500);
-        }
-        //jump url
+        $paymentMethod = $this->paymentMethod();
+        $currency = strtolower($this->config['currency']);
+        $stripeAmount = $this->stripeAmount((int)$order['total_amount'], $currency);
+        $metadata = $this->metadata($order, $stripeAmount, $currency);
         $jumpUrl = null;
         $actionType = 0;
-        $stripe = new \Stripe\StripeClient($this->config['stripe_sk_live']);
+        $stripe = $this->stripeClient();
 
-        if ($this->config['payment_method'] != "cards"){
-            $stripePaymentMethod = $stripe->paymentMethods->create([
-                'type' => $this->config['payment_method'],
-            ]);
-            // 准备支付意图的基础参数
-            $params = [
-                'amount' => floor($order['total_amount'] * $exchange),
-                'currency' => $currency,
-                'confirm' => true,
-                'payment_method' => $stripePaymentMethod->id,
-                'automatic_payment_methods' => ['enabled' => true],
-                'statement_descriptor_suffix' => 'sub-' . $order['user_id'] . '-' . substr($order['trade_no'], -8),
-                'description' => $this->config['description'],
-                'metadata' => [
-                    'user_id' => $order['user_id'],
-                    'out_trade_no' => $order['trade_no'],
-                    'identifier' => ''
-                ],
-                'return_url' => $order['return_url']
-            ];
+        try {
+            if ($paymentMethod !== 'card') {
+                $statementDescriptorSuffix = $this->statementDescriptorSuffix($order);
 
-            // 如果支付方式为 wechat_pay，添加相应的支付方式选项
-            if ($this->config['payment_method'] === 'wechat_pay') {
-                $params['payment_method_options'] = [
-                    'wechat_pay' => [
-                        'client' => 'web'
+                // Confirm immediately because Alipay and WeChat Pay return redirect or QR actions.
+                $params = [
+                    'amount' => $stripeAmount,
+                    'currency' => $currency,
+                    'confirm' => true,
+                    'payment_method_data' => [
+                        'type' => $paymentMethod,
                     ],
+                    'payment_method_types' => [$paymentMethod],
+                    'statement_descriptor_suffix' => $statementDescriptorSuffix,
+                    'description' => $this->config['description'],
+                    'metadata' => $metadata,
+                    'return_url' => $order['return_url'],
                 ];
-            }
-            //更新支持最新的paymentIntents方法，Sources API将在今年被彻底替
-            $stripeIntents = $stripe->paymentIntents->create($params);
 
-            $nextAction = null;
+                if ($paymentMethod === 'wechat_pay') {
+                    $params['payment_method_options'] = [
+                        'wechat_pay' => [
+                            'client' => 'web',
+                        ],
+                    ];
+                }
 
-            if (!$stripeIntents['next_action']) {
-                throw new ApiException(__('Payment gateway request failed'));
-            }else {
+                $stripeIntents = $stripe->paymentIntents->create($params);
+
+                if (!$stripeIntents['next_action']) {
+                    throw new ApiException(__('Payment gateway request failed'));
+                }
+
                 $nextAction = $stripeIntents['next_action'];
-            }
-
-            switch ($this->config['payment_method']){
-                case "alipay":
-                    if (isset($nextAction['alipay_handle_redirect'])){
+                switch ($paymentMethod) {
+                    case 'alipay':
+                        if (!isset($nextAction['alipay_handle_redirect'])) {
+                            throw new ApiException('unable get Alipay redirect url', 500);
+                        }
                         $jumpUrl = $nextAction['alipay_handle_redirect']['url'];
                         $actionType = 1;
-                    }else {
-                        throw new ApiException('unable get Alipay redirect url', 500);
-                    }
-                    break;
-                case "wechat_pay":
-                    if (isset($nextAction['wechat_pay_display_qr_code'])){
+                        break;
+                    case 'wechat_pay':
+                        if (!isset($nextAction['wechat_pay_display_qr_code'])) {
+                            throw new ApiException('unable get WeChat Pay redirect url', 500);
+                        }
                         $jumpUrl = $nextAction['wechat_pay_display_qr_code']['data'];
-                    }else {
-                        throw new ApiException('unable get WeChat Pay redirect url', 500);
-                    }
-            }
-        } else {
-            $creditCheckOut = $stripe->checkout->sessions->create([
-                'success_url' => $order['return_url'],
-                'client_reference_id' => $order['trade_no'],
-                'payment_method_types' => ['card'],
-                'line_items' => [
-                    [
-                        'price_data' => [
-                            'currency' => $currency,
-                            'unit_amount' => floor($order['total_amount'] * $exchange),
-                            'product_data' => [
-                                'name' => 'sub-' . $order['user_id'] . '-' . substr($order['trade_no'], -8),
-                                'description' => $this->config['description'],
-                            ]
-                        ],
-                        'quantity' => 1,
+                        break;
+                }
+            } else {
+                $creditCheckOut = $stripe->checkout->sessions->create([
+                    'success_url' => $order['return_url'],
+                    'cancel_url' => $order['return_url'],
+                    'client_reference_id' => $order['trade_no'],
+                    'payment_method_types' => ['card'],
+                    'metadata' => $metadata,
+                    'payment_intent_data' => [
+                        'description' => $this->config['description'],
+                        'metadata' => $metadata,
                     ],
-                ],
-                'mode' => 'payment',
-            ]);
-            $jumpUrl = $creditCheckOut['url'];
-            $actionType = 1;
+                    'line_items' => [
+                        [
+                            'price_data' => [
+                                'currency' => $currency,
+                                'unit_amount' => $stripeAmount,
+                                'product_data' => [
+                                    'name' => $this->statementDescriptorSuffix($order),
+                                    'description' => $this->config['description'],
+                                ],
+                            ],
+                            'quantity' => 1,
+                        ],
+                    ],
+                    'mode' => 'payment',
+                ]);
+                $jumpUrl = $creditCheckOut['url'];
+                $actionType = 1;
+            }
+        } catch (\Stripe\Exception\ApiErrorException $e) {
+            throw new ApiException($e->getMessage(), $e->getHttpStatus() ?: 500);
         }
 
         return [
             'type' => $actionType,
-            'data' => $jumpUrl
+            'data' => $jumpUrl,
         ];
     }
 
@@ -145,66 +169,235 @@ class StripeALLInOne {
     {
         try {
             \Stripe\Stripe::setApiKey($this->config['stripe_sk_live']);
-            //Workerman不支持使用php://input, stripe同时要求验证签名的payload不能经过修改，所以使用这个方法
+            \Stripe\Stripe::setApiVersion(self::STRIPE_API_VERSION);
             $payload = $GLOBALS['HTTP_RAW_POST_DATA'] ?? request()->getContent();
-            $headers = function_exists('getallheaders') ? getallheaders() : [];
-            $headerName = 'Stripe-Signature';
-            $signatureHeader = $headers[$headerName] ?? request()->header($headerName, '');
             $event = \Stripe\Webhook::constructEvent(
                 $payload,
-                $signatureHeader,
+                $this->signatureHeader(),
                 $this->config['stripe_webhook_key']
             );
-
-        } catch (\UnexpectedValueException $e){
+        } catch (\UnexpectedValueException $e) {
             throw new ApiException('Error parsing payload', 400);
-        }
-        catch (\Stripe\Exception\SignatureVerificationException $e) {
+        } catch (\Stripe\Exception\SignatureVerificationException $e) {
             throw new ApiException('signature not match', 400);
         }
+
         switch ($event->type) {
             case 'payment_intent.succeeded':
-                $object = $event->data->object;
-                if ($object->status === 'succeeded') {
-                    if (!isset($object->metadata->out_trade_no)) {
-                        return('order error');
-                    }
-                    $metaData = $object->metadata;
-                    $tradeNo = $metaData->out_trade_no;
-                    return [
-                        'trade_no' => $tradeNo,
-                        'callback_no' => $object->id
-                    ];
-                }
-                break;
+                return $this->paymentIntentSucceeded($event->data->object);
             case 'checkout.session.completed':
-                $object = $event->data->object;
-                if ($object->payment_status === 'paid') {
-                    return [
-                        'trade_no' => $object->client_reference_id,
-                        'callback_no' => $object->payment_intent
-                    ];
-                }
-                break;
             case 'checkout.session.async_payment_succeeded':
-                $object = $event->data->object;
-                return [
-                    'trade_no' => $object->client_reference_id,
-                    'callback_no' => $object->payment_intent
-                ];
-                break;
+                return $this->checkoutSessionPaid($event->data->object);
             default:
-                throw new ApiException('event is not support');
+                return $this->ignoredWebhookResult();
         }
-        return('success');
     }
 
-    private function exchange($from, $to)
+    private function paymentMethod(): string
+    {
+        $paymentMethod = strtolower(trim($this->config['payment_method'] ?? ''));
+
+        if (!in_array($paymentMethod, self::SUPPORTED_PAYMENT_METHODS, true)) {
+            throw new ApiException('Unsupported Stripe payment method', 400);
+        }
+
+        return $paymentMethod === 'cards' ? 'card' : $paymentMethod;
+    }
+
+    private function stripeClient(): \Stripe\StripeClient
+    {
+        return new \Stripe\StripeClient([
+            'api_key' => $this->config['stripe_sk_live'],
+            'stripe_version' => self::STRIPE_API_VERSION,
+            'max_network_retries' => 2,
+        ]);
+    }
+
+    private function metadata(array $order, int $stripeAmount, string $currency): array
+    {
+        return [
+            'user_id' => (string)$order['user_id'],
+            'out_trade_no' => (string)$order['trade_no'],
+            'payment_id' => (string)($this->config['id'] ?? ''),
+            'stripe_amount' => (string)$stripeAmount,
+            'stripe_currency' => $currency,
+        ];
+    }
+
+    private function statementDescriptorSuffix(array $order): string
+    {
+        return substr('sub-' . $order['user_id'] . '-' . substr($order['trade_no'], -8), 0, 22);
+    }
+
+    private function paymentIntentSucceeded($object): array
+    {
+        if (($object->status ?? null) !== 'succeeded') {
+            return $this->ignoredWebhookResult();
+        }
+
+        $tradeNo = $this->metadataValue($object->metadata ?? null, 'out_trade_no');
+        $this->assertTradeNo($tradeNo);
+        $order = $this->findWebhookOrder($tradeNo);
+        if (!$this->belongsToThisPayment($order)) {
+            return $this->ignoredWebhookResult();
+        }
+
+        $this->assertWebhookAmount(
+            $order,
+            (int)($object->amount_received ?? $object->amount ?? 0),
+            strtolower((string)($object->currency ?? '')),
+            $object->metadata ?? null
+        );
+
+        return [
+            'trade_no' => $tradeNo,
+            'callback_no' => $object->id,
+        ];
+    }
+
+    private function checkoutSessionPaid($object): array
+    {
+        if (($object->payment_status ?? null) !== 'paid') {
+            return $this->ignoredWebhookResult();
+        }
+
+        $tradeNo = (string)($object->client_reference_id ?? '');
+        $this->assertTradeNo($tradeNo);
+        $order = $this->findWebhookOrder($tradeNo);
+        if (!$this->belongsToThisPayment($order)) {
+            return $this->ignoredWebhookResult();
+        }
+
+        $this->assertWebhookAmount(
+            $order,
+            (int)($object->amount_total ?? 0),
+            strtolower((string)($object->currency ?? '')),
+            $object->metadata ?? null
+        );
+
+        return [
+            'trade_no' => $tradeNo,
+            'callback_no' => $object->payment_intent ?: $object->id,
+        ];
+    }
+
+    private function assertTradeNo(?string $tradeNo): void
+    {
+        if (!$tradeNo) {
+            throw new ApiException('order error', 400);
+        }
+    }
+
+    private function findWebhookOrder(string $tradeNo): Order
+    {
+        $order = Order::where('trade_no', $tradeNo)->first();
+        if (!$order) {
+            throw new ApiException('order error', 400);
+        }
+
+        return $order;
+    }
+
+    private function belongsToThisPayment(Order $order): bool
+    {
+        return empty($this->config['id']) || (int)$order->payment_id === (int)$this->config['id'];
+    }
+
+    private function assertWebhookAmount(Order $order, int $actualAmount, string $actualCurrency, $metadata): void
+    {
+        $expectedCurrency = strtolower($this->metadataValue($metadata, 'stripe_currency') ?: $this->config['currency']);
+        $expectedAmount = $this->metadataValue($metadata, 'stripe_amount');
+        $expectedAmount = $expectedAmount !== null && $expectedAmount !== ''
+            ? (int)$expectedAmount
+            : $this->stripeAmount((int)$order->total_amount, $expectedCurrency);
+
+        if ($actualCurrency !== $expectedCurrency) {
+            throw new ApiException('payment currency mismatch', 400);
+        }
+
+        if ($actualAmount !== $expectedAmount) {
+            throw new ApiException('payment amount mismatch', 400);
+        }
+    }
+
+    private function metadataValue($metadata, string $key): ?string
+    {
+        if (is_array($metadata)) {
+            return isset($metadata[$key]) ? (string)$metadata[$key] : null;
+        }
+
+        if (is_object($metadata) && isset($metadata->{$key})) {
+            return (string)$metadata->{$key};
+        }
+
+        return null;
+    }
+
+    private function ignoredWebhookResult(): array
+    {
+        return ['custom_result' => 'success'];
+    }
+
+    private function signatureHeader(): string
+    {
+        $signatureHeader = request()->header('Stripe-Signature', '');
+        if ($signatureHeader) {
+            return $signatureHeader;
+        }
+
+        $headers = function_exists('getallheaders') ? getallheaders() : [];
+        foreach ($headers as $name => $value) {
+            if (strtolower($name) === 'stripe-signature') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    private function stripeAmount(int $cnyMinorAmount, string $currency): int
+    {
+        $exchange = $this->exchange('CNY', $currency);
+        $majorAmount = ($cnyMinorAmount / 100) * $exchange;
+        $amount = in_array(strtolower($currency), self::ZERO_DECIMAL_CURRENCIES, true)
+            ? (int)round($majorAmount)
+            : (int)round($majorAmount * 100);
+
+        if ($amount <= 0) {
+            throw new ApiException('Invalid Stripe payment amount', 400);
+        }
+
+        return $amount;
+    }
+
+    private function exchange($from, $to): float
     {
         $from = strtolower($from);
         $to = strtolower($to);
-        $result = file_get_contents("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/" . $from . ".min.json");
-        $result = json_decode($result, true);
-        return $result[$from][$to];
+
+        if ($from === $to) {
+            return 1.0;
+        }
+
+        return Cache::remember("stripe_exchange_{$from}_{$to}", 3600, function () use ($from, $to) {
+            try {
+                $response = Http::timeout(5)
+                    ->retry(1, 100)
+                    ->get("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/{$from}.min.json");
+
+                if (!$response->ok()) {
+                    throw new \RuntimeException('Currency API request failed');
+                }
+
+                $rate = $response->json("{$from}.{$to}");
+                if (!is_numeric($rate) || (float)$rate <= 0) {
+                    throw new \RuntimeException('Currency API response is invalid');
+                }
+
+                return (float)$rate;
+            } catch (\Throwable $e) {
+                throw new ApiException('Currency conversion has timed out, please try again later', 500);
+            }
+        });
     }
 }

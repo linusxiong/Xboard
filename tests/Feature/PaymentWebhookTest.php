@@ -30,6 +30,34 @@ class PaymentWebhookTest extends TestCase
                 }
             ');
         }
+
+        if (!class_exists('App\\Payments\\IgnoredWebhookGateway')) {
+            eval('
+                namespace App\\Payments;
+
+                class IgnoredWebhookGateway {
+                    public function __construct($config) {}
+                    public function notify($params) {
+                        return [
+                            "custom_result" => "success"
+                        ];
+                    }
+                }
+            ');
+        }
+
+        if (!class_exists('App\\Payments\\StringWebhookGateway')) {
+            eval('
+                namespace App\\Payments;
+
+                class StringWebhookGateway {
+                    public function __construct($config) {}
+                    public function notify($params) {
+                        return "pending";
+                    }
+                }
+            ');
+        }
     }
 
     protected function setUp(): void
@@ -108,11 +136,31 @@ class PaymentWebhookTest extends TestCase
         $this->assertNull($order->callback_no);
     }
 
-    private function createPayment(string $uuid): Payment
+    public function testWebhookReturnsCustomResultWithoutOrderHandling(): void
+    {
+        $payment = $this->createPayment('ignored-webhook', 'IgnoredWebhookGateway');
+
+        $response = $this->postJson("/api/v1/guest/payment/notify/IgnoredWebhookGateway/{$payment->uuid}", []);
+
+        $response->assertOk();
+        $this->assertSame('success', $response->getContent());
+    }
+
+    public function testWebhookReturnsStringResultWithoutOrderHandling(): void
+    {
+        $payment = $this->createPayment('string-webhook', 'StringWebhookGateway');
+
+        $response = $this->postJson("/api/v1/guest/payment/notify/StringWebhookGateway/{$payment->uuid}", []);
+
+        $response->assertOk();
+        $this->assertSame('pending', $response->getContent());
+    }
+
+    private function createPayment(string $uuid, string $paymentMethod = 'TestWebhookGateway'): Payment
     {
         return Payment::query()->create([
             'uuid' => $uuid,
-            'payment' => 'TestWebhookGateway',
+            'payment' => $paymentMethod,
             'name' => $uuid,
             'config' => [],
             'enable' => true,
