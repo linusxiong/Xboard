@@ -70,12 +70,46 @@ class PaymentService
 
     public static function returnUrl(string $tradeNo): string
     {
-        return rtrim(self::publicBaseUrl(), '/') . '/#/order/' . $tradeNo;
+        return rtrim(self::browserBaseUrl(), '/') . '/#/order/' . $tradeNo;
     }
 
     private static function publicBaseUrl(): string
     {
         return admin_setting('app_url') ?: config('app.url');
+    }
+
+    private static function browserBaseUrl(): string
+    {
+        $origin = request()->headers->get('origin');
+        if ($baseUrl = self::originFromUrl($origin)) {
+            return $baseUrl;
+        }
+
+        $referer = request()->headers->get('referer');
+        if ($baseUrl = self::originFromUrl($referer)) {
+            return $baseUrl;
+        }
+
+        return self::publicBaseUrl();
+    }
+
+    private static function originFromUrl(?string $url): ?string
+    {
+        if (!$url || strtolower($url) === 'null') {
+            return null;
+        }
+
+        $parts = parse_url($url);
+        if (!in_array($parts['scheme'] ?? '', ['http', 'https'], true) || empty($parts['host'])) {
+            return null;
+        }
+
+        $origin = $parts['scheme'] . '://' . $parts['host'];
+        if (isset($parts['port'])) {
+            $origin .= ':' . $parts['port'];
+        }
+
+        return $origin;
     }
 
     public function form()
