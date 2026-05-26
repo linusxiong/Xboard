@@ -52,7 +52,7 @@ class PaymentService
     {
         return $this->payment->pay([
             'notify_url' => self::notifyUrl($this->method, $this->config['uuid'], $this->config['notify_domain']),
-            'return_url' => url('/#/order/' . $order['trade_no']),
+            'return_url' => self::returnUrl($order['trade_no']),
             'trade_no' => $order['trade_no'],
             'total_amount' => $order['total_amount'],
             'user_id' => $order['user_id'],
@@ -63,9 +63,19 @@ class PaymentService
     public static function notifyUrl(string $method, string $uuid, ?string $notifyDomain = null): string
     {
         $path = "/api/v1/guest/payment/notify/{$method}/{$uuid}";
-        $baseUrl = $notifyDomain ?: admin_setting('app_url') ?: config('app.url');
+        $baseUrl = $notifyDomain ?: self::publicBaseUrl();
 
         return rtrim($baseUrl, '/') . $path;
+    }
+
+    public static function returnUrl(string $tradeNo): string
+    {
+        return rtrim(self::publicBaseUrl(), '/') . '/#/order/' . $tradeNo;
+    }
+
+    private static function publicBaseUrl(): string
+    {
+        return admin_setting('app_url') ?: config('app.url');
     }
 
     public function form()

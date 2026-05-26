@@ -32,4 +32,17 @@ class PaymentServiceTest extends TestCase
             $notifyUrl
         );
     }
+
+    public function testReturnUrlUsesConfiguredAppUrlInsteadOfRequestPort(): void
+    {
+        config(['v2board.app_url' => 'https://bb.p-p.men']);
+        app()->instance('request', Request::create('http://bb.p-p.men:7001/api/v1/user/order/checkout', 'POST'));
+
+        $returnUrl = PaymentService::returnUrl('2026052608055083999481891');
+
+        $this->assertSame(
+            'https://bb.p-p.men/#/order/2026052608055083999481891',
+            $returnUrl
+        );
+    }
 }
