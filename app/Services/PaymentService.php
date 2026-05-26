@@ -50,21 +50,22 @@ class PaymentService
 
     public function pay($order)
     {
-        // custom notify domain name
-        $notifyUrl = url("/api/v1/guest/payment/notify/{$this->method}/{$this->config['uuid']}");
-        if ($this->config['notify_domain']) {
-            $parseUrl = parse_url($notifyUrl);
-            $notifyUrl = $this->config['notify_domain'] . $parseUrl['path'];
-        }
-        
         return $this->payment->pay([
-            'notify_url' => $notifyUrl,
+            'notify_url' => self::notifyUrl($this->method, $this->config['uuid'], $this->config['notify_domain']),
             'return_url' => url('/#/order/' . $order['trade_no']),
             'trade_no' => $order['trade_no'],
             'total_amount' => $order['total_amount'],
             'user_id' => $order['user_id'],
             'stripe_token' => $order['stripe_token']
         ]);
+    }
+
+    public static function notifyUrl(string $method, string $uuid, ?string $notifyDomain = null): string
+    {
+        $path = "/api/v1/guest/payment/notify/{$method}/{$uuid}";
+        $baseUrl = $notifyDomain ?: admin_setting('app_url') ?: config('app.url');
+
+        return rtrim($baseUrl, '/') . $path;
     }
 
     public function form()
