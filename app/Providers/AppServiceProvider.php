@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\Validator;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -24,5 +25,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot()
     {
         $this->app['view']->addNamespace('theme', public_path() . '/theme');
+
+        $this->app['validator']->resolver(function ($translator, $data, $rules, $messages, $attributes) {
+            return new Validator($translator, $data, $rules, $messages, $attributes);
+        });
     }
 }
